@@ -8,6 +8,9 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#define printk_syscall(fmt,args...) \
+	printk (KERN_DEBUG "%d " fmt, current->pid, ## args);
+
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/backing-dev.h>
@@ -291,11 +294,13 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	unsigned long min_brk;
 	bool populate;
 
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "enter to brk");
+	printk_syscall ("1");
+	// printk_syscall ("enter to brk");
 
 	down_write(&mm->mmap_sem);
 
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "mmap lock acquired");
+	printk_syscall ("2");
+	// printk_syscall ("mmap lock acquired");
 
 #ifdef CONFIG_COMPAT_BRK
 	/*
@@ -310,7 +315,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 #else
 	min_brk = mm->start_brk;
 #endif
-        /* Your request are nagari */
+	/* Your request are nagari */
 	if (brk < min_brk)
 		goto out;
 
@@ -324,65 +329,73 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 			      mm->end_data, mm->start_data))
 		goto out;
 
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "after rlimit checking");
+	printk_syscall ("3");
+	// printk_syscall ("after rlimit checking");
 
 	newbrk = PAGE_ALIGN(brk);
 	oldbrk = PAGE_ALIGN(mm->brk);
 	if (oldbrk == newbrk)
-                /* never populate */
+		/* never populate */
 		goto set_brk;
 
 	/* Always allow shrinking brk. */
 	if (brk <= mm->brk) {
 		if (!do_munmap(mm, newbrk, oldbrk-newbrk)) {
-			printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "munmap succeed");
+			printk_syscall ("4");
+			// printk_syscall ("munmap succeed");
 			goto set_brk;
 		}
-		printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "munmap failed");
+		printk_syscall ("5");
+		// printk_syscall ("munmap failed");
 		goto out;
 	}
 
 	/* Check against existing mmap mappings. */
 	if (find_vma_intersection(mm, oldbrk, newbrk+PAGE_SIZE)) {
-		printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "found VMA intersection");
+		printk_syscall ("6");
+		// printk_syscall ("found VMA intersection");
 		goto out;
-        }
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "no VMA intersection");
+	}
+	printk_syscall ("7");
+	// printk_syscall ("no VMA intersection");
 
 	/* Ok, looks good - let it rip. */
 	if (do_brk(oldbrk, newbrk-oldbrk) != oldbrk) {
-		printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "do_brk failed");
+		printk_syscall ("8");
+		// printk_syscall ("do_brk failed");
 		goto out;
-        }
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "do_brk succeed");
+	}
+	printk_syscall ("9");
+	// printk_syscall ("do_brk succeed");
 
 set_brk:
 	mm->brk = brk;
-        /* Only populate when newbrk use new page
-         * and VM_LOCKED must be set
-         */
+	/* Only populate when newbrk use new page
+	 * and VM_LOCKED must be set
+	 */
 	populate = newbrk > oldbrk && (mm->def_flags & VM_LOCKED) != 0;
-	
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "waiting for release mmap lock in set_brk");
+
 	up_write(&mm->mmap_sem);
 
 	if (populate) {
 		/* actual user page get */
 		mm_populate(oldbrk, newbrk - oldbrk);
-		printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "mm_populate succeed");
+		printk_syscall ("a");
+		// printk_syscall ("mm_populate succeed");
 	}
 	
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "done by set_brk");
+	printk_syscall ("b");
+	// printk_syscall ("done by set_brk");
 
 	return brk;
 
 out:
 	retval = mm->brk;
-	
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "waiting for release mmap lock in out");
+
 	up_write(&mm->mmap_sem);
-	
-	printk (KERN_DEBUG "[%s.%d] [PID %d] %s", __FUNCTION__, __LINE__, current->pid, "done by out");
+
+	printk_syscall ("c");
+	// printk_syscall ("done by out");
 
 	return retval;
 }
