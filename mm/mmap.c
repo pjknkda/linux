@@ -8,8 +8,6 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#define printk_syscall(fmt,args...) \
-	printk (KERN_DEBUG "%d " fmt, current->pid, ## args);
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -60,6 +58,31 @@
 #ifndef arch_rebalance_pgtables
 #define arch_rebalance_pgtables(addr, len)		(addr)
 #endif
+
+
+#define printk_syscall(fmt,args...) \
+	printk (KERN_DEBUG "%d " fmt, current->pid, ## args);
+
+#define measure_init(n) \
+	unsigned long measure_path = 0; \
+	uint64_t measure_timestamps[n] = {0, }
+
+#define measure_checkin(chk_id) \
+do { \
+	measure_path |= (1 << chk_id); \
+	measure_timestamps[chk_id] = local_clock (); \
+} while (0)
+
+#define measure_print(n) \
+do { \
+	int i; \
+	char times_buffer[n * 20 + 1]; \
+	char *_iter = times_buffer; \
+	for (i=0; i<n; ++i) { \
+	    _iter += sprintf (_iter, "%llu ", measure_timestamps[i]); \
+	} \
+	printk_syscall ("%lu %s", measure_path, times_buffer); \
+} while (0)
 
 static void unmap_region(struct mm_struct *mm,
 		struct vm_area_struct *vma, struct vm_area_struct *prev,
@@ -294,12 +317,14 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	unsigned long min_brk;
 	bool populate;
 
-	printk_syscall ("1");
+	measure_init(12);
+
+	measure_checkin (0);
 	// printk_syscall ("enter to brk");
 
 	down_write(&mm->mmap_sem);
 
-	printk_syscall ("2");
+	measure_checkin (1);
 	// printk_syscall ("mmap lock acquired");
 
 #ifdef CONFIG_COMPAT_BRK
@@ -329,7 +354,7 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 			      mm->end_data, mm->start_data))
 		goto out;
 
-	printk_syscall ("3");
+	measure_checkin (2);
 	// printk_syscall ("after rlimit checking");
 
 	newbrk = PAGE_ALIGN(brk);
@@ -341,31 +366,31 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	/* Always allow shrinking brk. */
 	if (brk <= mm->brk) {
 		if (!do_munmap(mm, newbrk, oldbrk-newbrk)) {
-			printk_syscall ("4");
+			measure_checkin (3);
 			// printk_syscall ("munmap succeed");
 			goto set_brk;
 		}
-		printk_syscall ("5");
+		measure_checkin (4);
 		// printk_syscall ("munmap failed");
 		goto out;
 	}
 
 	/* Check against existing mmap mappings. */
 	if (find_vma_intersection(mm, oldbrk, newbrk+PAGE_SIZE)) {
-		printk_syscall ("6");
+		measure_checkin (5);
 		// printk_syscall ("found VMA intersection");
 		goto out;
 	}
-	printk_syscall ("7");
-	// printk_syscall ("no VMA intersection");
+	measure_checkin (6);
+	// printk_syscall ("");
 
 	/* Ok, looks good - let it rip. */
 	if (do_brk(oldbrk, newbrk-oldbrk) != oldbrk) {
-		printk_syscall ("8");
+		measure_checkin (7);
 		// printk_syscall ("do_brk failed");
 		goto out;
 	}
-	printk_syscall ("9");
+	measure_checkin (8);
 	// printk_syscall ("do_brk succeed");
 
 set_brk:
@@ -380,22 +405,27 @@ set_brk:
 	if (populate) {
 		/* actual user page get */
 		mm_populate(oldbrk, newbrk - oldbrk);
-		printk_syscall ("a");
+		measure_checkin (9);
 		// printk_syscall ("mm_populate succeed");
 	}
 	
-	printk_syscall ("b");
+	measure_checkin (10);
 	// printk_syscall ("done by set_brk");
 
-	return brk;
+	retval = brk;
+
+	goto out_hole;
 
 out:
 	retval = mm->brk;
 
 	up_write(&mm->mmap_sem);
-
-	printk_syscall ("c");
+	
+	measure_checkin (11);
 	// printk_syscall ("done by out");
+
+out_hole:
+	measure_print (12);
 
 	return retval;
 }
