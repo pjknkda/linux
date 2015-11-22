@@ -486,6 +486,7 @@ struct mm_struct {
 	/* address of the bounds directory */
 	void __user *bd_addr;
 #endif
+	int cap_sys_admin;
 };
 
 static inline void mm_init_cpumask(struct mm_struct *mm)

@@ -213,6 +213,42 @@ int security_settime(const struct timespec *ts, const struct timezone *tz)
 	return call_int_hook(settime, 0, ts, tz);
 }
 
+int security_vm_enough_memory_mm_cs530(struct mm_struct *mm, long pages)
+{
+	struct security_hook_list *hp;
+	int cap_sys_admin = 1;
+	int rc;
+
+	// bool is_target = (strncmp (current->comm, "launcher", 8) == 0);
+	// int loop_cnt = 0;
+	// int break_idx = -1;
+
+	if (mm->cap_sys_admin != -1) {
+		cap_sys_admin = mm->cap_sys_admin;
+	} else {
+		list_for_each_entry(hp, &security_hook_heads.vm_enough_memory, list) {
+			rc = hp->hook.vm_enough_memory(mm, pages);
+			if (rc <= 0) {
+				cap_sys_admin = 0;
+
+				// if (break_idx == -1) {
+				// 	break_idx = loop_cnt;
+				// }
+				break;
+			}
+			// loop_cnt += 1;
+		}
+
+		mm->cap_sys_admin = cap_sys_admin;
+	}
+
+	// if (is_target) {
+	// 	printk (KERN_DEBUG "%d %d %d", current->pid, loop_cnt, break_idx);
+	// }
+
+	return __vm_enough_memory(mm, pages, cap_sys_admin);
+}
+
 int security_vm_enough_memory_mm(struct mm_struct *mm, long pages)
 {
 	struct security_hook_list *hp;

@@ -2816,9 +2816,9 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	int error;
 	unsigned long _rv = addr;
 
-	// measure_init(12);
+	measure_init(12);
 
-	// measure_checkin(0);
+	measure_checkin(0);
 
 	len = PAGE_ALIGN(len);
 	if (!len) {
@@ -2831,7 +2831,7 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 
 	error = get_unmapped_area(NULL, addr, len, 0, MAP_FIXED);
 
-	// measure_checkin(1);
+	measure_checkin(1);
 
 	if (error & ~PAGE_MASK) {
 		_rv = error;
@@ -2852,7 +2852,7 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	 */
 	verify_mm_writelocked(mm); // constant time
 
-	// measure_checkin(2);
+	measure_checkin(2);
 
 	/*
 	 * Clear old maps.  this also does some error checking for us
@@ -2866,7 +2866,7 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 		}
 	}
 
-	// measure_checkin(3);
+	measure_checkin(3);
 
 	/* Check against address space limits *after* clearing old maps... */
 	if (!may_expand_vm(mm, len >> PAGE_SHIFT)) { // constant time
@@ -2881,23 +2881,23 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 		// return -ENOMEM;
 	}
 
-	// measure_checkin(4);
+	measure_checkin(4);
 
-	if (security_vm_enough_memory_mm(mm, len >> PAGE_SHIFT)) {
-		// measure_checkin(5);
+	if (security_vm_enough_memory_mm_cs530(mm, len >> PAGE_SHIFT)) {
+		measure_checkin(5);
 
 		_rv = -ENOMEM;
 		goto out_hole;
 		// return -ENOMEM;
 	}
 
-	// measure_checkin(6);
+	measure_checkin(6);
 
 	/* Can we just expand an old private anonymous mapping? */
 	vma = vma_merge(mm, prev, addr, addr + len, flags,
 			NULL, NULL, pgoff, NULL, NULL_VM_UFFD_CTX);
 
-	// measure_checkin(7);
+	measure_checkin(7);
 
 	if (vma) {
 		goto out;
@@ -2908,12 +2908,12 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	 */
 	vma = kmem_cache_zalloc(vm_area_cachep, GFP_KERNEL);
 
-	// measure_checkin(8);
+	measure_checkin(8);
 
 	if (!vma) {
 		vm_unacct_memory(len >> PAGE_SHIFT);
 
-		// measure_checkin(9);
+		measure_checkin(9);
 
 		_rv = -ENOMEM;
 		goto out_hole;
@@ -2929,11 +2929,11 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	vma->vm_page_prot = vm_get_page_prot(flags); // constant time
 	vma_link(mm, vma, prev, rb_link, rb_parent);
 
-	// measure_checkin(10);
+	measure_checkin(10);
 out:
 	perf_event_mmap(vma);
 
-	// measure_checkin(11);
+	measure_checkin(11);
 
 	mm->total_vm += len >> PAGE_SHIFT;
 	if (flags & VM_LOCKED)
@@ -2942,7 +2942,7 @@ out:
 	_rv = addr;
 
 out_hole:
-	// measure_print (12);
+	measure_print (12);
 
 	return _rv;
 }
