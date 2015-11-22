@@ -65,23 +65,29 @@
 
 #define measure_init(n) \
 	unsigned long measure_path = 0; \
-	uint64_t measure_timestamps[n] = {0, }
+	uint64_t measure_timestamps[n] = {0, }; \
+	bool is_target = (strncmp (current->comm, "launcher", 8) == 0)
+	// bool is_target = true
 
 #define measure_checkin(chk_id) \
 do { \
-	measure_path |= (1 << chk_id); \
-	measure_timestamps[chk_id] = local_clock (); \
+	if (is_target) { \
+		measure_path |= (1 << chk_id); \
+		measure_timestamps[chk_id] = local_clock (); \
+	} \
 } while (0)
 
 #define measure_print(n) \
 do { \
-	int i; \
-	char times_buffer[n * 20 + 1]; \
-	char *_iter = times_buffer; \
-	for (i=0; i<n; ++i) { \
-	    _iter += sprintf (_iter, "%llu ", measure_timestamps[i]); \
+	if (is_target) { \
+		int i; \
+		char times_buffer[n * 20 + 1]; \
+		char *_iter = times_buffer; \
+		for (i=0; i<n; ++i) { \
+		    _iter += sprintf (_iter, "%llu ", measure_timestamps[i]); \
+		} \
+		printk_syscall ("%lu %s", measure_path, times_buffer); \
 	} \
-	printk_syscall ("%lu %s", measure_path, times_buffer); \
 } while (0)
 
 static void unmap_region(struct mm_struct *mm,
@@ -317,15 +323,19 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	unsigned long min_brk;
 	bool populate;
 
-	measure_init(12);
+	// measure_init(12);
 
-	measure_checkin (0);
-	// printk_syscall ("enter to brk");
+	// enter to brk
+	// measure_checkin (0);
+
+	// if (strncmp (current->comm, "launcher", 8) == 0) {
+	// 	printk_syscall ("%ld %p", mm->mmap_sem.count, (void *) mm->mmap_sem.owner);
+	// }
 
 	down_write(&mm->mmap_sem);
 
-	measure_checkin (1);
-	// printk_syscall ("mmap lock acquired");
+	// mmap lock acquired
+	// measure_checkin (1);
 
 #ifdef CONFIG_COMPAT_BRK
 	/*
@@ -354,8 +364,8 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 			      mm->end_data, mm->start_data))
 		goto out;
 
-	measure_checkin (2);
-	// printk_syscall ("after rlimit checking");
+	// after rlimit checking
+	// measure_checkin (2);
 
 	newbrk = PAGE_ALIGN(brk);
 	oldbrk = PAGE_ALIGN(mm->brk);
@@ -366,32 +376,33 @@ SYSCALL_DEFINE1(brk, unsigned long, brk)
 	/* Always allow shrinking brk. */
 	if (brk <= mm->brk) {
 		if (!do_munmap(mm, newbrk, oldbrk-newbrk)) {
-			measure_checkin (3);
-			// printk_syscall ("munmap succeed");
+			// munmap succeed
+			// measure_checkin (3);
 			goto set_brk;
 		}
-		measure_checkin (4);
-		// printk_syscall ("munmap failed");
+		// munmap failed
+		// measure_checkin (4);
 		goto out;
 	}
 
 	/* Check against existing mmap mappings. */
 	if (find_vma_intersection(mm, oldbrk, newbrk+PAGE_SIZE)) {
-		measure_checkin (5);
-		// printk_syscall ("found VMA intersection");
+		// found VMA intersection
+		// measure_checkin (5);
 		goto out;
 	}
-	measure_checkin (6);
-	// printk_syscall ("");
+
+	// measure_checkin (6);
 
 	/* Ok, looks good - let it rip. */
 	if (do_brk(oldbrk, newbrk-oldbrk) != oldbrk) {
-		measure_checkin (7);
-		// printk_syscall ("do_brk failed");
+		// do_brk failed
+		// measure_checkin (7);
 		goto out;
 	}
-	measure_checkin (8);
-	// printk_syscall ("do_brk succeed");
+
+	// do_brk succeed
+	// measure_checkin (8);
 
 set_brk:
 	mm->brk = brk;
@@ -405,12 +416,12 @@ set_brk:
 	if (populate) {
 		/* actual user page get */
 		mm_populate(oldbrk, newbrk - oldbrk);
-		measure_checkin (9);
-		// printk_syscall ("mm_populate succeed");
+		// mm_populate succeed
+		// measure_checkin (9);
 	}
 	
-	measure_checkin (10);
-	// printk_syscall ("done by set_brk");
+	// done by set_brk
+	// measure_checkin (10);
 
 	retval = brk;
 
@@ -421,11 +432,11 @@ out:
 
 	up_write(&mm->mmap_sem);
 	
-	measure_checkin (11);
-	// printk_syscall ("done by out");
+	// done by out
+	// measure_checkin (11);
 
 out_hole:
-	measure_print (12);
+	// measure_print (12);
 
 	return retval;
 }
@@ -2803,76 +2814,137 @@ static unsigned long do_brk(unsigned long addr, unsigned long len)
 	struct rb_node **rb_link, *rb_parent;
 	pgoff_t pgoff = addr >> PAGE_SHIFT;
 	int error;
+	unsigned long _rv = addr;
+
+	// measure_init(12);
+
+	// measure_checkin(0);
 
 	len = PAGE_ALIGN(len);
-	if (!len)
-		return addr;
+	if (!len) {
+		_rv = addr;
+		goto out_hole;
+		// return addr;
+	}
 
 	flags = VM_DATA_DEFAULT_FLAGS | VM_ACCOUNT | mm->def_flags;
 
 	error = get_unmapped_area(NULL, addr, len, 0, MAP_FIXED);
-	if (error & ~PAGE_MASK)
-		return error;
 
-	error = mlock_future_check(mm, mm->def_flags, len);
-	if (error)
-		return error;
+	// measure_checkin(1);
+
+	if (error & ~PAGE_MASK) {
+		_rv = error;
+		goto out_hole;
+		// return error;
+	}
+
+	error = mlock_future_check(mm, mm->def_flags, len); // constant time
+	if (error) {
+		_rv = error;
+		goto out_hole;
+		// return error;
+	}
 
 	/*
 	 * mm->mmap_sem is required to protect against another thread
 	 * changing the mappings in case we sleep.
 	 */
-	verify_mm_writelocked(mm);
+	verify_mm_writelocked(mm); // constant time
+
+	// measure_checkin(2);
 
 	/*
 	 * Clear old maps.  this also does some error checking for us
 	 */
 	while (find_vma_links(mm, addr, addr + len, &prev, &rb_link,
 			      &rb_parent)) {
-		if (do_munmap(mm, addr, len))
-			return -ENOMEM;
+		if (do_munmap(mm, addr, len)) {
+			_rv = -ENOMEM;
+			goto out_hole;
+			// return -ENOMEM;
+		}
 	}
 
+	// measure_checkin(3);
+
 	/* Check against address space limits *after* clearing old maps... */
-	if (!may_expand_vm(mm, len >> PAGE_SHIFT))
-		return -ENOMEM;
+	if (!may_expand_vm(mm, len >> PAGE_SHIFT)) { // constant time
+		_rv = -ENOMEM;
+		goto out_hole;
+		// return -ENOMEM;
+	}
 
-	if (mm->map_count > sysctl_max_map_count)
-		return -ENOMEM;
+	if (mm->map_count > sysctl_max_map_count) {
+		_rv = -ENOMEM;
+		goto out_hole;
+		// return -ENOMEM;
+	}
 
-	if (security_vm_enough_memory_mm(mm, len >> PAGE_SHIFT))
-		return -ENOMEM;
+	// measure_checkin(4);
+
+	if (security_vm_enough_memory_mm(mm, len >> PAGE_SHIFT)) {
+		// measure_checkin(5);
+
+		_rv = -ENOMEM;
+		goto out_hole;
+		// return -ENOMEM;
+	}
+
+	// measure_checkin(6);
 
 	/* Can we just expand an old private anonymous mapping? */
 	vma = vma_merge(mm, prev, addr, addr + len, flags,
 			NULL, NULL, pgoff, NULL, NULL_VM_UFFD_CTX);
-	if (vma)
+
+	// measure_checkin(7);
+
+	if (vma) {
 		goto out;
+	}
 
 	/*
 	 * create a vma struct for an anonymous mapping
 	 */
 	vma = kmem_cache_zalloc(vm_area_cachep, GFP_KERNEL);
+
+	// measure_checkin(8);
+
 	if (!vma) {
 		vm_unacct_memory(len >> PAGE_SHIFT);
-		return -ENOMEM;
+
+		// measure_checkin(9);
+
+		_rv = -ENOMEM;
+		goto out_hole;
+		// return -ENOMEM;
 	}
 
-	INIT_LIST_HEAD(&vma->anon_vma_chain);
+	INIT_LIST_HEAD(&vma->anon_vma_chain); // constant time
 	vma->vm_mm = mm;
 	vma->vm_start = addr;
 	vma->vm_end = addr + len;
 	vma->vm_pgoff = pgoff;
 	vma->vm_flags = flags;
-	vma->vm_page_prot = vm_get_page_prot(flags);
+	vma->vm_page_prot = vm_get_page_prot(flags); // constant time
 	vma_link(mm, vma, prev, rb_link, rb_parent);
+
+	// measure_checkin(10);
 out:
 	perf_event_mmap(vma);
+
+	// measure_checkin(11);
+
 	mm->total_vm += len >> PAGE_SHIFT;
 	if (flags & VM_LOCKED)
 		mm->locked_vm += (len >> PAGE_SHIFT);
 	vma->vm_flags |= VM_SOFTDIRTY;
-	return addr;
+	_rv = addr;
+
+out_hole:
+	// measure_print (12);
+
+	return _rv;
 }
 
 unsigned long vm_brk(unsigned long addr, unsigned long len)
